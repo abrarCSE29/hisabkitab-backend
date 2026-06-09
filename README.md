@@ -37,6 +37,22 @@ OpenAI/JWT fixtures:
 uv run pytest
 ```
 
+## Logging
+
+Every request emits one structured line on the `hisabkitab.request` logger —
+method, path, status, duration, and the verified Supabase user id:
+
+```
+2026-06-10 02:18:30,696 INFO [hisabkitab.request] GET /api/v1/health -> 200 (1.1 ms) user=-
+2026-06-10 02:18:30,703 WARNING [app.core.security] Rejected request without bearer token: /api/v1/vouchers
+```
+
+Auth rejections (missing/expired/invalid tokens) are logged as warnings, and
+unhandled exceptions are logged with a full stack trace. Logs go to stdout
+(which Render/Koyeb capture in their dashboards) and to a size-rotated
+`server.log` in the working directory (5 MB, 3 backups). Set `LOG_FILE=`
+(empty) to disable the file, or `DEBUG=true` to lower the level to DEBUG.
+
 ## API overview
 
 All routes except `/api/v1/health` require `Authorization: Bearer <supabase-jwt>`.

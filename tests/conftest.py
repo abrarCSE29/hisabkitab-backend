@@ -13,6 +13,7 @@ TEST_USER_ID = "5f4e9c1a-7b2d-4e3f-9a8b-1c2d3e4f5a6b"
 # Must be set before the settings cache is populated by app imports.
 os.environ["SUPABASE_JWT_SECRET"] = TEST_JWT_SECRET
 os.environ["SUPABASE_JWT_AUDIENCE"] = TEST_AUDIENCE
+os.environ["LOG_FILE"] = ""  # don't write server.log during test runs
 
 from app.api.deps import get_db  # noqa: E402
 from app.core.config import get_settings  # noqa: E402

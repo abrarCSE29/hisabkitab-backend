@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     app_name: str = "HisabKitab API"
     api_v1_prefix: str = "/api/v1"
     debug: bool = False
+    log_file: str = "server.log"  # set LOG_FILE= (empty) to log to stdout only
 
     # MongoDB Atlas (M0 free tier friendly defaults)
     mongodb_uri: str = "mongodb://localhost:27017"
