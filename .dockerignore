@@ -1,0 +1,11 @@
+.venv/
+.git/
+.pytest_cache/
+__pycache__/
+*.pyc
+.env
+tests/
+postman/
+README.md
+System-Architecture-Hisabkitab.md
+docker-compose.yml

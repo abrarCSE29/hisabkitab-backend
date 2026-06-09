@@ -1,0 +1,29 @@
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    # Application
+    app_name: str = "HisabKitab API"
+    api_v1_prefix: str = "/api/v1"
+    debug: bool = False
+
+    # MongoDB Atlas (M0 free tier friendly defaults)
+    mongodb_uri: str = "mongodb://localhost:27017"
+    mongodb_db_name: str = "hisabkitab"
+
+    # Supabase Auth
+    supabase_url: str = ""
+    supabase_jwt_secret: str = "local-dev-secret-change-me"
+    supabase_jwt_audience: str = "authenticated"
+
+    # OpenAI (FR-6 OCR)
+    openai_api_key: str = ""
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
