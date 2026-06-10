@@ -36,7 +36,9 @@ class TestCreateFamily:
         assert str(stored["_id"]) == family_id
         assert stored["name"] == "Amader Songshar"
         assert stored["created_by"] == TEST_USER_ID
-        assert stored["members"] == [{"user_id": TEST_USER_ID, "role": "admin"}]
+        assert stored["members"] == [
+            {"user_id": TEST_USER_ID, "role": "admin", "email": "user@example.com", "name": None}
+        ]
 
     def test_requires_auth(self, client):
         assert client.post("/api/v1/family", json={"name": "X"}).status_code == 401
@@ -122,7 +124,12 @@ class TestJoin:
         assert response.json() == {"family_id": family_id, "name": "Amader Songshar"}
 
         stored = mock_db.families.find_one()
-        assert {"user_id": MEMBER_UUID, "role": "member"} in stored["members"]
+        assert {
+            "user_id": MEMBER_UUID,
+            "role": "member",
+            "email": MEMBER_EMAIL,
+            "name": None,
+        } in stored["members"]
         assert stored["invites"][0]["status"] == "accepted"
 
     def test_invalid_code_returns_404(self, client):
@@ -190,6 +197,8 @@ class TestSoloToFamilyVisibilityTransition:
         ).json()
         assert sorted(v["voucher_total"] for v in family_feed) == [300, 400]
         assert {v["user_id"] for v in family_feed} == {TEST_USER_ID, MEMBER_UUID}
+        # Each entry carries its creator's email so the UI can attribute it.
+        assert {v["user_email"] for v in family_feed} == {"user@example.com", MEMBER_EMAIL}
 
     def test_outsider_cannot_read_family_feed(self, client, mock_db):
         family_id = create_family(client)

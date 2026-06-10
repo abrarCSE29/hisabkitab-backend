@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 class FamilyMember(BaseModel):
     user_id: str
     role: Literal["admin", "member"]
+    email: str | None = None
+    name: str | None = None
 
 
 class FamilyCreate(BaseModel):

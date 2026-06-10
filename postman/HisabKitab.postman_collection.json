@@ -113,7 +113,7 @@
             "url": "{{baseUrl}}/api/v1/vouchers/ocr",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"image_url\": \"https://your-project.supabase.co/storage/v1/object/public/receipts/sample.webp\"\n}"
+              "raw": "{\n  \"image_url\": \"https://your-project.supabase.co/storage/v1/object/public/hisabkitab-voucher/sample.webp\"\n}"
             }
           }
         }

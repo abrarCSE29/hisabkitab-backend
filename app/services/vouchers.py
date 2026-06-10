@@ -7,7 +7,7 @@ from fastapi import HTTPException, status
 from pymongo.database import Database
 
 from app.core.security import AuthenticatedUser
-from app.schemas.voucher import VoucherCreate, VoucherItem
+from app.schemas.voucher import VoucherCreate, VoucherItem, VoucherUpdate
 
 TWO_PLACES = Decimal("0.01")
 
@@ -18,14 +18,18 @@ def compute_voucher_total(items: list[VoucherItem]) -> float:
     return float(total.quantize(TWO_PLACES, rounding=ROUND_HALF_UP))
 
 
-def parse_family_id(raw: str) -> ObjectId:
+def parse_object_id(raw: str, field: str) -> ObjectId:
     try:
         return ObjectId(raw)
     except (InvalidId, TypeError):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="family_id is not a valid ObjectId",
+            detail=f"{field} is not a valid ObjectId",
         )
+
+
+def parse_family_id(raw: str) -> ObjectId:
+    return parse_object_id(raw, "family_id")
 
 
 def assert_family_member(db: Database, family_id: ObjectId, user: AuthenticatedUser) -> None:
@@ -46,6 +50,9 @@ def create_voucher(db: Database, user: AuthenticatedUser, payload: VoucherCreate
     document = {
         "family_id": family_oid,
         "user_id": user.id,
+        # Display identity for shared family feeds (from Google profile when present)
+        "user_email": user.email,
+        "user_name": user.name,
         "type": payload.type,
         "category_id": payload.category_id,
         "items": [item.model_dump() for item in payload.items],
@@ -76,10 +83,53 @@ def list_vouchers(
         query = {"user_id": user.id}
 
     cursor = db.vouchers.find(query).sort("created_at", -1).limit(limit)
-    documents = []
-    for doc in cursor:
-        doc["_id"] = str(doc["_id"])
-        if doc.get("family_id") is not None:
-            doc["family_id"] = str(doc["family_id"])
-        documents.append(doc)
-    return documents
+    return [_serialize(doc) for doc in cursor]
+
+
+def _serialize(doc: dict) -> dict:
+    doc["_id"] = str(doc["_id"])
+    if doc.get("family_id") is not None:
+        doc["family_id"] = str(doc["family_id"])
+    return doc
+
+
+def _fetch_visible_voucher(db: Database, user: AuthenticatedUser, voucher_id: str) -> dict:
+    """Load a voucher the caller may see: their own, or one in a family
+    they belong to. Anything else is reported as not found (no existence leak)."""
+    oid = parse_object_id(voucher_id, "voucher_id")
+    doc = db.vouchers.find_one({"_id": oid})
+    if doc is not None:
+        if doc["user_id"] == user.id:
+            return doc
+        family_id = doc.get("family_id")
+        if family_id is not None and db.families.find_one(
+            {"_id": family_id, "members.user_id": user.id}
+        ):
+            return doc
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Voucher not found")
+
+
+def get_voucher(db: Database, user: AuthenticatedUser, voucher_id: str) -> dict:
+    return _serialize(_fetch_visible_voucher(db, user, voucher_id))
+
+
+def update_voucher(
+    db: Database, user: AuthenticatedUser, voucher_id: str, payload: VoucherUpdate
+) -> dict:
+    doc = _fetch_visible_voucher(db, user, voucher_id)
+    if doc["user_id"] != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the creator of a voucher can edit it",
+        )
+
+    changes = {
+        "type": payload.type,
+        "category_id": payload.category_id,
+        "items": [item.model_dump() for item in payload.items],
+        "voucher_total": compute_voucher_total(payload.items),
+        "image_url": payload.image_url,
+        "updated_at": datetime.now(timezone.utc),
+    }
+    db.vouchers.update_one({"_id": doc["_id"]}, {"$set": changes})
+    return _serialize({**doc, **changes})

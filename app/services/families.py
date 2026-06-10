@@ -14,7 +14,9 @@ def create_family(db: Database, user: AuthenticatedUser, payload: FamilyCreate) 
     document = {
         "name": payload.name,
         "created_by": user.id,
-        "members": [{"user_id": user.id, "role": "admin"}],
+        "members": [
+            {"user_id": user.id, "role": "admin", "email": user.email, "name": user.name}
+        ],
         "invites": [],
         "created_at": datetime.now(timezone.utc),
     }
@@ -107,7 +109,14 @@ def join_family(db: Database, user: AuthenticatedUser, payload: JoinRequest) -> 
     db.families.update_one(
         {"_id": family["_id"]},
         {
-            "$push": {"members": {"user_id": user.id, "role": "member"}},
+            "$push": {
+                "members": {
+                    "user_id": user.id,
+                    "role": "member",
+                    "email": user.email,
+                    "name": user.name,
+                }
+            },
             "$set": {"invites": updated_invites},
         },
     )

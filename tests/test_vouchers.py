@@ -12,7 +12,7 @@ import pytest
 
 from app.schemas.voucher import VoucherItem
 from app.services.vouchers import compute_voucher_total
-from tests.conftest import TEST_USER_ID, auth_header, make_token
+from tests.conftest import TEST_USER_ID, auth_header, make_token  # noqa: F401
 
 
 def quick_expense(amount: float = 250.0, **overrides) -> dict:
@@ -45,6 +45,7 @@ class TestCreateVoucher:
         stored = mock_db.vouchers.find_one()
         assert str(stored["_id"]) == body["id"]
         assert stored["user_id"] == TEST_USER_ID
+        assert stored["user_email"] == "user@example.com"  # display identity for feeds
         assert stored["voucher_total"] == 120
         assert stored["family_id"] is None
 
@@ -153,3 +154,163 @@ class TestListVouchers:
     def test_rejects_limit_out_of_bounds(self, client):
         assert client.get("/api/v1/vouchers?limit=0", headers=auth_header()).status_code == 422
         assert client.get("/api/v1/vouchers?limit=500", headers=auth_header()).status_code == 422
+
+
+def create_and_get_id(client, payload: dict | None = None, token: str | None = None) -> str:
+    response = client.post(
+        "/api/v1/vouchers", json=payload or quick_expense(), headers=auth_header(token)
+    )
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
+class TestGetVoucher:
+    def test_owner_can_fetch_own_voucher(self, client):
+        payload = {
+            "type": "expense",
+            "category_id": "bazaar",
+            "items": [{"name": "Rice", "amount": 400.5}],
+        }
+        voucher_id = create_and_get_id(client, payload)
+
+        response = client.get(f"/api/v1/vouchers/{voucher_id}", headers=auth_header())
+        assert response.status_code == 200
+        body = response.json()
+        assert body["_id"] == voucher_id
+        assert body["category_id"] == "bazaar"
+        assert body["items"] == [{"name": "Rice", "amount": 400.5}]
+        assert body["updated_at"] is None
+
+    def test_solo_voucher_hidden_from_other_users(self, client):
+        voucher_id = create_and_get_id(client)
+        stranger = make_token(sub="stranger-uuid", email="stranger@example.com")
+        response = client.get(f"/api/v1/vouchers/{voucher_id}", headers=auth_header(stranger))
+        assert response.status_code == 404
+
+    def test_family_member_can_view_family_voucher(self, client, mock_db):
+        family_id = str(
+            mock_db.families.insert_one(
+                {
+                    "name": "F",
+                    "created_by": TEST_USER_ID,
+                    "members": [
+                        {"user_id": TEST_USER_ID, "role": "admin", "email": None, "name": None},
+                        {"user_id": "member-uuid", "role": "member", "email": None, "name": None},
+                    ],
+                    "invites": [],
+                    "created_at": datetime.now(timezone.utc),
+                }
+            ).inserted_id
+        )
+        voucher_id = create_and_get_id(client, quick_expense(300, family_id=family_id))
+
+        member = make_token(sub="member-uuid", email="member@example.com")
+        response = client.get(f"/api/v1/vouchers/{voucher_id}", headers=auth_header(member))
+        assert response.status_code == 200
+        assert response.json()["voucher_total"] == 300
+
+    def test_unknown_id_returns_404_and_malformed_422(self, client):
+        ok_format = "65cb7f0000000000000000aa"
+        assert (
+            client.get(f"/api/v1/vouchers/{ok_format}", headers=auth_header()).status_code == 404
+        )
+        assert client.get("/api/v1/vouchers/not-an-id", headers=auth_header()).status_code == 422
+
+    def test_requires_auth(self, client):
+        assert client.get("/api/v1/vouchers/65cb7f0000000000000000aa").status_code == 401
+
+
+class TestUpdateVoucher:
+    def update(self, client, voucher_id, payload, token=None):
+        return client.put(
+            f"/api/v1/vouchers/{voucher_id}", json=payload, headers=auth_header(token)
+        )
+
+    def test_owner_updates_items_and_total_recomputed(self, client, mock_db):
+        voucher_id = create_and_get_id(client)
+        response = self.update(
+            client,
+            voucher_id,
+            {
+                "type": "expense",
+                "category_id": "bazaar",
+                "items": [{"name": "Rice", "amount": 0.1}, {"name": "Salt", "amount": 0.2}],
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["voucher_total"] == 0.3  # Decimal-exact recomputation
+        assert body["category_id"] == "bazaar"
+        assert body["updated_at"] is not None
+
+        stored = mock_db.vouchers.find_one()
+        assert stored["voucher_total"] == 0.3
+        assert stored["created_at"] is not None  # immutable fields preserved
+        assert stored["user_id"] == TEST_USER_ID
+
+    def test_update_validates_category_against_type(self, client):
+        voucher_id = create_and_get_id(client)
+        response = self.update(
+            client,
+            voucher_id,
+            {"type": "expense", "category_id": "salary", "items": [{"amount": 10}]},
+        )
+        assert response.status_code == 422
+
+    def test_family_member_cannot_edit_others_voucher(self, client, mock_db):
+        family_id = str(
+            mock_db.families.insert_one(
+                {
+                    "name": "F",
+                    "created_by": TEST_USER_ID,
+                    "members": [
+                        {"user_id": TEST_USER_ID, "role": "admin", "email": None, "name": None},
+                        {"user_id": "member-uuid", "role": "member", "email": None, "name": None},
+                    ],
+                    "invites": [],
+                    "created_at": datetime.now(timezone.utc),
+                }
+            ).inserted_id
+        )
+        voucher_id = create_and_get_id(client, quick_expense(300, family_id=family_id))
+
+        member = make_token(sub="member-uuid", email="member@example.com")
+        response = self.update(
+            client, voucher_id, {"type": "expense", "items": [{"amount": 1}]}, token=member
+        )
+        assert response.status_code == 403  # visible to them, but not editable
+
+    def test_stranger_gets_404(self, client):
+        voucher_id = create_and_get_id(client)
+        stranger = make_token(sub="stranger-uuid", email="s@example.com")
+        response = self.update(
+            client, voucher_id, {"type": "expense", "items": [{"amount": 1}]}, token=stranger
+        )
+        assert response.status_code == 404
+
+    def test_update_rejects_invalid_image_url(self, client):
+        voucher_id = create_and_get_id(client)
+        response = self.update(
+            client,
+            voucher_id,
+            {
+                "type": "expense",
+                "items": [{"amount": 1}],
+                "image_url": "data:image/png;base64,AAAA",
+            },
+        )
+        assert response.status_code == 422
+
+    def test_family_id_is_immutable(self, client, mock_db):
+        voucher_id = create_and_get_id(client)  # solo voucher
+        response = self.update(
+            client,
+            voucher_id,
+            {
+                "type": "expense",
+                "items": [{"amount": 5}],
+                "family_id": "65cb7f0000000000000000aa",  # ignored by VoucherUpdate
+            },
+        )
+        assert response.status_code == 200
+        assert mock_db.vouchers.find_one()["family_id"] is None

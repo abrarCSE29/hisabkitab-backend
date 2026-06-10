@@ -4,7 +4,7 @@ from pymongo.database import Database
 from app.api.deps import get_db
 from app.core.security import AuthenticatedUser, get_current_user
 from app.schemas.ocr import OcrRequest, ReceiptExtraction
-from app.schemas.voucher import VoucherCreate, VoucherCreated, VoucherOut
+from app.schemas.voucher import VoucherCreate, VoucherCreated, VoucherOut, VoucherUpdate
 from app.services import ocr as ocr_service
 from app.services import vouchers as voucher_service
 
@@ -29,6 +29,27 @@ def get_vouchers(
     user: AuthenticatedUser = Depends(get_current_user),
 ) -> list[dict]:
     return voucher_service.list_vouchers(db, user, family_id=family_id, limit=limit)
+
+
+@router.get("/{voucher_id}", response_model=VoucherOut, response_model_by_alias=True)
+def get_voucher(
+    voucher_id: str,
+    db: Database = Depends(get_db),
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> dict:
+    """Fetch one voucher — the caller's own, or from a family they belong to."""
+    return voucher_service.get_voucher(db, user, voucher_id)
+
+
+@router.put("/{voucher_id}", response_model=VoucherOut, response_model_by_alias=True)
+def update_voucher(
+    voucher_id: str,
+    payload: VoucherUpdate,
+    db: Database = Depends(get_db),
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> dict:
+    """Replace a voucher's editable fields (creator only); total is recomputed."""
+    return voucher_service.update_voucher(db, user, voucher_id, payload)
 
 
 @router.post("/ocr", response_model=ReceiptExtraction)

@@ -19,15 +19,16 @@ class VoucherItem(BaseModel):
     amount: float = Field(gt=0)
 
 
-class VoucherCreate(BaseModel):
+class VoucherPayload(BaseModel):
+    """Shared editable fields + validation for create and update."""
+
     type: Literal["income", "expense"]
     category_id: str | None = None
     items: list[VoucherItem] = Field(min_length=1)
     image_url: str | None = None
-    family_id: str | None = None  # ObjectId string, only in Family Mode
 
     @model_validator(mode="after")
-    def tag_with_category(self) -> "VoucherCreate":
+    def tag_with_category(self) -> "VoucherPayload":
         """FR-3: every voucher carries exactly one valid category for its type."""
         self.category_id = resolve_category_id(self.category_id, self.type)
         return self
@@ -41,6 +42,15 @@ class VoucherCreate(BaseModel):
         return validate_image_url(value, get_settings().supabase_url)
 
 
+class VoucherCreate(VoucherPayload):
+    family_id: str | None = None  # ObjectId string, only in Family Mode
+
+
+class VoucherUpdate(VoucherPayload):
+    """Full replacement of the editable fields; the workspace (family_id),
+    creator identity and created_at are immutable."""
+
+
 class VoucherCreated(BaseModel):
     status: Literal["success"] = "success"
     id: str
@@ -52,9 +62,12 @@ class VoucherOut(BaseModel):
     id: str = Field(alias="_id")
     family_id: str | None = None
     user_id: str
+    user_email: str | None = None
+    user_name: str | None = None
     type: str
     category_id: str | None = None
     items: list[VoucherItem]
     voucher_total: float
     image_url: str | None = None
     created_at: datetime
+    updated_at: datetime | None = None
