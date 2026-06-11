@@ -15,5 +15,7 @@ wheels/
 # Tooling caches
 .pytest_cache/
 
+postman/*
+
 # Logs
 server.log*
