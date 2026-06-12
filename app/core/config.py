@@ -27,8 +27,10 @@ class Settings(BaseSettings):
     supabase_jwt_secret: str = DEV_PLACEHOLDER_JWT_SECRET
     supabase_jwt_audience: str = "authenticated"
 
-    # OpenAI (FR-6 OCR)
-    openai_api_key: str = ""
+    # Groq (FR-6 OCR, OpenAI-compatible API)
+    groq_api_key: str = ""
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    ocr_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 
 @lru_cache

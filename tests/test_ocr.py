@@ -45,11 +45,11 @@ class FakeOpenAI:
 
 @pytest.fixture
 def openai_configured(monkeypatch):
-    monkeypatch.setattr(get_settings(), "openai_api_key", "sk-test")
+    monkeypatch.setattr(get_settings(), "groq_api_key", "gsk-test")
 
 
 def use_fake_client(monkeypatch, fake: FakeOpenAI) -> None:
-    monkeypatch.setattr("app.services.ocr.get_openai_client", lambda: fake)
+    monkeypatch.setattr("app.services.ocr.get_ocr_client", lambda: fake)
 
 
 class TestOcrEndpoint:
@@ -66,7 +66,7 @@ class TestOcrEndpoint:
         assert response.status_code == 422
 
     def test_unconfigured_server_returns_503(self, client, monkeypatch):
-        monkeypatch.setattr(get_settings(), "openai_api_key", "")
+        monkeypatch.setattr(get_settings(), "groq_api_key", "")
         response = client.post(
             "/api/v1/vouchers/ocr", json={"image_url": IMAGE_URL}, headers=auth_header()
         )

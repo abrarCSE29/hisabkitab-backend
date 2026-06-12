@@ -1,4 +1,7 @@
-"""FR-6: Receipt OCR via the OpenAI Vision API (gpt-4o-mini, structured outputs).
+"""FR-6: Receipt OCR via Groq's vision models (structured outputs).
+
+Groq exposes an OpenAI-compatible API, so the OpenAI SDK is used as the
+client with Groq's base URL. The model is configured via OCR_MODEL in .env.
 
 Free-tier resilience (spec edge case "Zero-Cost OpenAI Rate Limits"): rate
 limits, exhausted quota, and provider outages map to structured HTTP errors
@@ -13,8 +16,6 @@ from openai import APIError, APIStatusError, AuthenticationError, OpenAI, RateLi
 from app.core.config import get_settings
 from app.schemas.ocr import ReceiptExtraction
 
-OCR_MODEL = "gpt-4o-mini"
-
 SYSTEM_PROMPT = (
     "You extract line items from photos of shop receipts from Bangladesh. "
     "Receipts may be printed or handwritten, in Bangla or English. "
@@ -24,26 +25,28 @@ SYSTEM_PROMPT = (
 
 
 @lru_cache(maxsize=2)
-def _client_for(api_key: str) -> OpenAI:
+def _client_for(api_key: str, base_url: str) -> OpenAI:
     # Bounded timeout/retries: each OCR call occupies a threadpool worker,
     # so a hung provider must not pin threads for minutes.
-    return OpenAI(api_key=api_key, timeout=30.0, max_retries=1)
+    return OpenAI(api_key=api_key, base_url=base_url, timeout=30.0, max_retries=1)
 
 
-def get_openai_client() -> OpenAI:
-    return _client_for(get_settings().openai_api_key)
+def get_ocr_client() -> OpenAI:
+    settings = get_settings()
+    return _client_for(settings.groq_api_key, settings.groq_base_url)
 
 
 def extract_receipt_items(image_url: str) -> ReceiptExtraction:
-    if not get_settings().openai_api_key:
+    settings = get_settings()
+    if not settings.groq_api_key:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
-            "OCR is not configured on this server (missing OpenAI API key)",
+            "OCR is not configured on this server (missing GROQ_API_KEY)",
         )
 
     try:
-        completion = get_openai_client().chat.completions.parse(
-            model=OCR_MODEL,
+        completion = get_ocr_client().chat.completions.parse(
+            model=settings.ocr_model,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {

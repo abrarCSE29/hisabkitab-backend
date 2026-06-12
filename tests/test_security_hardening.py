@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import DEV_PLACEHOLDER_JWT_SECRET, get_settings
 from app.main import create_app
-from app.services.ocr import get_openai_client
+from app.services.ocr import get_ocr_client
 from tests.conftest import TEST_USER_ID, auth_header, make_token
 
 
@@ -88,7 +88,7 @@ class TestRateLimiting:
         assert response.status_code == 404  # fresh budget, not 429
 
     def test_ocr_calls_are_capped(self, client):
-        # OPENAI_API_KEY is empty in tests, so each allowed call returns 503 —
+        # GROQ_API_KEY is empty in tests, so each allowed call returns 503 —
         # the limiter must still count them and trip on the 21st.
         body = {"image_url": "https://example.com/r.webp"}
         for _ in range(20):
@@ -180,11 +180,12 @@ class TestJwksOutage:
         assert response.status_code == 503
 
 
-class TestOpenAiClientReuse:
+class TestOcrClientReuse:
     def test_client_is_cached_with_bounded_timeout(self, monkeypatch):
-        monkeypatch.setattr(get_settings(), "openai_api_key", "sk-test-cache")
-        first = get_openai_client()
-        second = get_openai_client()
+        monkeypatch.setattr(get_settings(), "groq_api_key", "gsk-test-cache")
+        first = get_ocr_client()
+        second = get_ocr_client()
         assert first is second
         assert first.timeout == 30.0
         assert first.max_retries == 1
+        assert "groq.com" in str(first.base_url)
