@@ -19,8 +19,11 @@ from app.schemas.ocr import ReceiptExtraction
 SYSTEM_PROMPT = (
     "You extract line items from photos of shop receipts from Bangladesh. "
     "Receipts may be printed or handwritten, in Bangla or English. "
-    "Return every purchasable line item with its price in BDT. Convert Bangla "
-    "numerals to standard digits. Exclude subtotals, VAT lines and grand totals."
+    "Return every purchasable line item with its TOTAL amount in BDT for that "
+    "line: when a line shows quantity and unit price, multiply them (e.g. "
+    "'2 x 80' -> amount 160); when a printed line total exists, use it. Never "
+    "return the unit price for multi-quantity lines. Convert Bangla numerals "
+    "to standard digits. Exclude subtotals, VAT lines and grand totals."
 )
 
 
