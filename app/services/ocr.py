@@ -22,8 +22,11 @@ SYSTEM_PROMPT = (
     "Return every purchasable line item with its TOTAL amount in BDT for that "
     "line: when a line shows quantity and unit price, multiply them (e.g. "
     "'2 x 80' -> amount 160); when a printed line total exists, use it. Never "
-    "return the unit price for multi-quantity lines. Convert Bangla numerals "
-    "to standard digits. Exclude subtotals, VAT lines and grand totals."
+    "return the unit price for multi-quantity lines. Also include VAT, tax, "
+    "service charge, delivery fee and any other extra charges, each as its own "
+    "item (e.g. name 'VAT', amount 15). Convert Bangla numerals to standard "
+    "digits. Exclude only subtotal and grand-total lines, and discount lines "
+    "that merely restate the total."
 )
 
 
