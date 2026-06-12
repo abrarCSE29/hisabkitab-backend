@@ -5,6 +5,8 @@ limits, exhausted quota, and provider outages map to structured HTTP errors
 the frontend can show — never an unhandled 500.
 """
 
+from functools import lru_cache
+
 from fastapi import HTTPException, status
 from openai import APIError, APIStatusError, AuthenticationError, OpenAI, RateLimitError
 
@@ -21,8 +23,15 @@ SYSTEM_PROMPT = (
 )
 
 
+@lru_cache(maxsize=2)
+def _client_for(api_key: str) -> OpenAI:
+    # Bounded timeout/retries: each OCR call occupies a threadpool worker,
+    # so a hung provider must not pin threads for minutes.
+    return OpenAI(api_key=api_key, timeout=30.0, max_retries=1)
+
+
 def get_openai_client() -> OpenAI:
-    return OpenAI(api_key=get_settings().openai_api_key)
+    return _client_for(get_settings().openai_api_key)
 
 
 def extract_receipt_items(image_url: str) -> ReceiptExtraction:

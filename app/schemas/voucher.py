@@ -15,17 +15,17 @@ class VoucherItem(BaseModel):
     single item and may omit the name.
     """
 
-    name: str = ""
-    amount: float = Field(gt=0)
+    name: str = Field(default="", max_length=200)
+    amount: float = Field(gt=0, le=1_000_000_000)  # sanity cap: 100 crore BDT
 
 
 class VoucherPayload(BaseModel):
     """Shared editable fields + validation for create and update."""
 
     type: Literal["income", "expense"]
-    category_id: str | None = None
-    items: list[VoucherItem] = Field(min_length=1)
-    image_url: str | None = None
+    category_id: str | None = Field(default=None, max_length=50)
+    items: list[VoucherItem] = Field(min_length=1, max_length=100)
+    image_url: str | None = Field(default=None, max_length=2048)
 
     @model_validator(mode="after")
     def tag_with_category(self) -> "VoucherPayload":

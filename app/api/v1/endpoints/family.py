@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, status
 from pymongo.database import Database
 
 from app.api.deps import get_db
+from app.core.ratelimit import SlidingWindowLimiter, user_rate_limit
 from app.core.security import AuthenticatedUser, get_current_user
 from app.schemas.family import (
     FamilyCreate,
@@ -14,6 +15,9 @@ from app.schemas.family import (
 from app.services import families as family_service
 
 router = APIRouter(prefix="/family", tags=["family"])
+
+# Join codes are short; cap guessing attempts per user.
+JOIN_LIMITER = SlidingWindowLimiter(max_requests=10, window_seconds=900)
 
 
 @router.post("", response_model=FamilyCreated, status_code=status.HTTP_201_CREATED)
@@ -45,7 +49,11 @@ def invite_member(
     return InviteResponse()
 
 
-@router.post("/join", response_model=FamilyCreated)
+@router.post(
+    "/join",
+    response_model=FamilyCreated,
+    dependencies=[Depends(user_rate_limit(JOIN_LIMITER, "join"))],
+)
 def join_family(
     payload: JoinRequest,
     db: Database = Depends(get_db),

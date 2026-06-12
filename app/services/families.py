@@ -66,8 +66,15 @@ def _resolve_admin_family(db: Database, user: AuthenticatedUser, family_id: str 
 def invite_member(db: Database, user: AuthenticatedUser, payload: InviteRequest) -> None:
     family = _resolve_admin_family(db, user, payload.family_id)
 
-    if any(m for m in family["members"] if m.get("user_id") == payload.email):
+    email_lower = payload.email.lower()
+    if any((m.get("email") or "").lower() == email_lower for m in family["members"]):
         raise HTTPException(status.HTTP_409_CONFLICT, "User is already a member")
+
+    # Re-inviting replaces any pending code for that email instead of stacking.
+    db.families.update_one(
+        {"_id": family["_id"]},
+        {"$pull": {"invites": {"email": email_lower, "status": "pending"}}},
+    )
 
     join_code = secrets.token_hex(4)  # 8-char shareable code
     db.families.update_one(

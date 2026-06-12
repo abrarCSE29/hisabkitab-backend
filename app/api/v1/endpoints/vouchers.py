@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query, status
 from pymongo.database import Database
 
 from app.api.deps import get_db
+from app.core.ratelimit import SlidingWindowLimiter, user_rate_limit
 from app.core.security import AuthenticatedUser, get_current_user
 from app.schemas.ocr import OcrRequest, ReceiptExtraction
 from app.schemas.voucher import VoucherCreate, VoucherCreated, VoucherOut, VoucherUpdate
@@ -9,6 +10,9 @@ from app.services import ocr as ocr_service
 from app.services import vouchers as voucher_service
 
 router = APIRouter(prefix="/vouchers", tags=["vouchers"])
+
+# OCR hits the metered OpenAI API and ties up a worker thread per call.
+OCR_LIMITER = SlidingWindowLimiter(max_requests=20, window_seconds=3600)
 
 
 @router.post("", response_model=VoucherCreated, status_code=status.HTTP_201_CREATED)
@@ -52,7 +56,11 @@ def update_voucher(
     return voucher_service.update_voucher(db, user, voucher_id, payload)
 
 
-@router.post("/ocr", response_model=ReceiptExtraction)
+@router.post(
+    "/ocr",
+    response_model=ReceiptExtraction,
+    dependencies=[Depends(user_rate_limit(OCR_LIMITER, "OCR"))],
+)
 def parse_receipt(
     payload: OcrRequest,
     user: AuthenticatedUser = Depends(get_current_user),

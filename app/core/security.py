@@ -60,6 +60,13 @@ def _resolve_verification_key(token: str):
             raise jwt.InvalidTokenError("Asymmetric verification not configured")
         try:
             return get_jwks_client().get_signing_key_from_jwt(token).key, algorithm
+        except jwt.PyJWKClientConnectionError as exc:
+            # Supabase unreachable is our outage, not the caller's bad token.
+            logger.error("JWKS endpoint unreachable: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication service temporarily unavailable",
+            )
         except jwt.PyJWKClientError as exc:
             logger.warning("JWKS key lookup failed: %s", exc)
             raise jwt.InvalidTokenError("Unknown signing key")

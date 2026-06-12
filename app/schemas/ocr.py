@@ -5,7 +5,7 @@ from app.core.storage import validate_image_url
 
 
 class OcrRequest(BaseModel):
-    image_url: str
+    image_url: str = Field(max_length=2048)
 
     @field_validator("image_url")
     @classmethod

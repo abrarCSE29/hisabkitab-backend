@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
-from app.core.config import get_settings
+from app.core.config import DEV_PLACEHOLDER_JWT_SECRET, get_settings
 from app.core.logging import setup_logging
 from app.db.mongodb import close_mongo_connection, connect_to_mongo
 
@@ -23,6 +23,15 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     setup_logging()
     settings = get_settings()
+
+    # Fail closed: with the public placeholder secret, anyone could mint valid
+    # HS256 tokens. Refuse to boot outside explicit local development.
+    if settings.supabase_jwt_secret == DEV_PLACEHOLDER_JWT_SECRET and not settings.debug:
+        raise RuntimeError(
+            "SUPABASE_JWT_SECRET is not configured (still the development placeholder). "
+            "Set a real secret, or set DEBUG=true for local development."
+        )
+
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
     @app.middleware("http")
@@ -50,16 +59,22 @@ def create_app() -> FastAPI:
         )
         return response
 
+    # CORS_ORIGINS=https://app.example.com,... in production; "*" for local dev.
+    # Credentials are never combined with a wildcard origin.
+    origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+    allow_all = origins == ["*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # tighten to the Vercel domain in production
-        allow_credentials=True,
+        allow_origins=origins,
+        allow_credentials=not allow_all,
         allow_methods=["*"],
-        allow_headers=["*"],
+        allow_headers=["Authorization", "Content-Type"],
     )
+
     @app.get("/")
     async def health_check():
         return {"status": "ok"}
+
     app.include_router(api_router, prefix=settings.api_v1_prefix)
     return app
 

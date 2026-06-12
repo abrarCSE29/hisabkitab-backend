@@ -41,4 +41,4 @@ class InviteResponse(BaseModel):
 
 
 class JoinRequest(BaseModel):
-    code: str = Field(min_length=1)
+    code: str = Field(min_length=1, max_length=64)

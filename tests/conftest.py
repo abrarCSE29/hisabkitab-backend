@@ -17,6 +17,7 @@ os.environ["SUPABASE_JWT_SECRET"] = TEST_JWT_SECRET
 os.environ["SUPABASE_JWT_AUDIENCE"] = TEST_AUDIENCE
 os.environ["SUPABASE_URL"] = ""
 os.environ["OPENAI_API_KEY"] = ""
+os.environ["CORS_ORIGINS"] = "*"
 os.environ["LOG_FILE"] = ""  # don't write server.log during test runs
 
 from app.api.deps import get_db  # noqa: E402
@@ -59,6 +60,16 @@ def make_token(
 
 def auth_header(token: str | None = None) -> dict:
     return {"Authorization": f"Bearer {token or make_token()}"}
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiters():
+    """Rate-limit hit counts are process-global; isolate them per test."""
+    from app.core.ratelimit import reset_all_limiters
+
+    reset_all_limiters()
+    yield
+    reset_all_limiters()
 
 
 @pytest.fixture
