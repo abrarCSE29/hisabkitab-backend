@@ -9,6 +9,7 @@ test "Solo to Family Visibility Transition", solo side).
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from bson import ObjectId
 
 from app.schemas.voucher import VoucherItem
 from app.services.vouchers import compute_voucher_total
@@ -131,6 +132,27 @@ class TestListVouchers:
         assert len(body) == 1
         assert body[0]["voucher_total"] == 100
         assert body[0]["user_id"] == TEST_USER_ID
+
+    def test_personal_feed_excludes_own_family_vouchers(self, client, mock_db):
+        # A family entry the user created must NOT leak into their personal feed.
+        self.seed(mock_db, TEST_USER_ID, 100)  # personal entry
+        mock_db.vouchers.insert_one(
+            {
+                "family_id": ObjectId(),
+                "user_id": TEST_USER_ID,
+                "type": "expense",
+                "category_id": "bazaar",
+                "items": [{"name": "x", "amount": 500}],
+                "voucher_total": 500,
+                "image_url": None,
+                "created_at": datetime.now(timezone.utc),
+            }
+        )
+
+        response = client.get("/api/v1/vouchers", headers=auth_header())
+        body = response.json()
+        assert len(body) == 1
+        assert body[0]["voucher_total"] == 100  # only the personal one
 
     def test_reverse_chronological_order_and_limit(self, client, mock_db):
         for days_ago in (2, 0, 1):  # inserted out of order on purpose

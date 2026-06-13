@@ -187,9 +187,10 @@ class TestSoloToFamilyVisibilityTransition:
         self._post_voucher(client, admin, 300, family_id=family_id)
         self._post_voucher(client, member, 400, family_id=family_id)
 
-        # Solo feeds remain scoped to each user's own records (solo + shared).
+        # Personal feed shows ONLY personal entries — a user's family vouchers
+        # belong to the family feed, not their personal space.
         admin_solo = client.get("/api/v1/vouchers", headers=auth_header(admin)).json()
-        assert sorted(v["voucher_total"] for v in admin_solo) == [100, 300]
+        assert sorted(v["voucher_total"] for v in admin_solo) == [100]
 
         # Family feed compiles both members' shared vouchers — and nothing solo.
         family_feed = client.get(

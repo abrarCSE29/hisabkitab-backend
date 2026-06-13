@@ -72,15 +72,17 @@ def list_vouchers(
 ) -> list[dict]:
     """Reverse-chronological feed, scoped per the blueprint's visibility rules.
 
-    Solo mode filters on the caller's user_id; an explicit family_id switches
-    the scope to the shared family feed (membership required).
+    Solo mode shows only the caller's *personal* entries (those not tied to any
+    family); an explicit family_id switches the scope to the shared family feed
+    (membership required). Without the family_id filter, entries a user logs in
+    a family would also leak into their personal feed.
     """
     if family_id is not None:
         family_oid = parse_family_id(family_id)
         assert_family_member(db, family_oid, user)
         query = {"family_id": family_oid}
     else:
-        query = {"user_id": user.id}
+        query = {"user_id": user.id, "family_id": None}
 
     cursor = db.vouchers.find(query).sort("created_at", -1).limit(limit)
     return [_serialize(doc) for doc in cursor]
