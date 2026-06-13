@@ -32,7 +32,16 @@ def create_app() -> FastAPI:
             "Set a real secret, or set DEBUG=true for local development."
         )
 
-    app = FastAPI(title=settings.app_name, lifespan=lifespan)
+    # Expose the interactive API docs only in local development; keep the
+    # schema and Swagger/ReDoc UIs off in production.
+    docs_enabled = settings.debug
+    app = FastAPI(
+        title=settings.app_name,
+        lifespan=lifespan,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
+    )
 
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
