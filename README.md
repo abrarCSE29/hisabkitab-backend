@@ -60,7 +60,7 @@ All routes except `/api/v1/health` require `Authorization: Bearer <supabase-jwt>
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/api/v1/health` | Health check / keep-alive ping target |
-| GET | `/api/v1/auth/me` | Verify session, return user identity |
+| GET | `/api/v1/auth/me` | Verify session, return identity, sync user profile (FR-1) |
 | POST | `/api/v1/vouchers` | Create voucher (quick or multi-item; FR-2) |
 | GET | `/api/v1/vouchers?family_id=&limit=` | Reverse-chronological feed, solo or family scoped |
 | POST | `/api/v1/vouchers/ocr` | Extract receipt items via Groq vision model (FR-6) |
@@ -68,7 +68,9 @@ All routes except `/api/v1/health` require `Authorization: Bearer <supabase-jwt>
 | POST | `/api/v1/family` | Create family group, caller becomes admin (FR-4) |
 | GET | `/api/v1/family` | List the caller's families |
 | POST | `/api/v1/family/invite` | Email a single-use join code (admin only) |
-| POST | `/api/v1/family/join` | Redeem a join code |
+| GET | `/api/v1/family/{id}/share-code` | Get the family's reusable share code (admin only) |
+| POST | `/api/v1/family/{id}/share-code` | Regenerate (revoke + reissue) the share code (admin only) |
+| POST | `/api/v1/family/join` | Redeem a share code or emailed invite code |
 
 A ready-made Postman collection lives in
 [postman/HisabKitab.postman_collection.json](postman/HisabKitab.postman_collection.json)
@@ -86,9 +88,9 @@ app/
 │   └── storage.py        # receipt image URL validation (FR-5)
 ├── db/mongodb.py         # PyMongo pool lifecycle + indexes
 ├── schemas/              # Pydantic request/response models
-├── services/             # vouchers, families, ocr, email
+├── services/             # vouchers, families, users, ocr, email
 └── api/v1/endpoints/     # route handlers
-tests/                    # pytest suite (81 tests)
+tests/                    # pytest suite (129 tests)
 ```
 
 ## Deployment (Koyeb / Render free tier)

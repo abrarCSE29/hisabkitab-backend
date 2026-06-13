@@ -9,6 +9,7 @@ class FamilyMember(BaseModel):
     role: Literal["admin", "member"]
     email: str | None = None
     name: str | None = None
+    avatar_url: str | None = None
 
 
 class FamilyCreate(BaseModel):
@@ -42,3 +43,7 @@ class InviteResponse(BaseModel):
 
 class JoinRequest(BaseModel):
     code: str = Field(min_length=1, max_length=64)
+
+
+class ShareCode(BaseModel):
+    code: str

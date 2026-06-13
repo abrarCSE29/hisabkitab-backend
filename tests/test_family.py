@@ -214,3 +214,75 @@ class TestSoloToFamilyVisibilityTransition:
         payload = {"type": "expense", "items": [{"amount": 10}], "family_id": family_id}
         response = client.post("/api/v1/vouchers", json=payload, headers=auth_header(outsider))
         assert response.status_code == 403
+
+
+class TestShareCode:
+    def _share_code(self, client, family_id: str) -> str:
+        response = client.get(f"/api/v1/family/{family_id}/share-code", headers=auth_header())
+        assert response.status_code == 200
+        return response.json()["code"]
+
+    def test_family_is_created_with_a_share_code(self, client, mock_db):
+        create_family(client)
+        assert len(mock_db.families.find_one()["share_code"]) == 8
+
+    def test_admin_can_read_share_code(self, client):
+        family_id = create_family(client)
+        code = self._share_code(client, family_id)
+        assert len(code) == 8
+        # Stable across reads.
+        assert self._share_code(client, family_id) == code
+
+    def test_non_admin_cannot_read_share_code(self, client):
+        family_id = create_family(client)
+        response = client.get(
+            f"/api/v1/family/{family_id}/share-code", headers=auth_header(member_token())
+        )
+        assert response.status_code == 403
+
+    def test_anyone_with_share_code_can_join_without_email_binding(self, client):
+        family_id = create_family(client)
+        code = self._share_code(client, family_id)
+
+        # A user whose email matches no invite joins purely via the shared code.
+        stranger = make_token(sub="stranger-uuid", email="stranger@example.com")
+        response = client.post("/api/v1/family/join", json={"code": code}, headers=auth_header(stranger))
+        assert response.status_code == 200
+        assert response.json()["family_id"] == family_id
+
+    def test_share_code_join_is_idempotent_409(self, client):
+        family_id = create_family(client)
+        code = self._share_code(client, family_id)
+        # The admin (already a member) cannot re-join with the code.
+        response = client.post("/api/v1/family/join", json={"code": code}, headers=auth_header())
+        assert response.status_code == 409
+
+    def test_rotating_revokes_the_old_code(self, client):
+        family_id = create_family(client)
+        old = self._share_code(client, family_id)
+
+        rotated = client.post(f"/api/v1/family/{family_id}/share-code", headers=auth_header())
+        assert rotated.status_code == 200
+        new = rotated.json()["code"]
+        assert new != old
+
+        stranger = make_token(sub="stranger-2", email="s2@example.com")
+        assert (
+            client.post("/api/v1/family/join", json={"code": old}, headers=auth_header(stranger)).status_code
+            == 404
+        )
+        assert (
+            client.post("/api/v1/family/join", json={"code": new}, headers=auth_header(stranger)).status_code
+            == 200
+        )
+
+    def test_share_joined_member_is_enriched_with_profile(self, client):
+        family_id = create_family(client)
+        code = self._share_code(client, family_id)
+        joiner = make_token(sub="joiner-uuid", email="joiner@example.com", name="Joiner Bhai")
+        client.post("/api/v1/family/join", json={"code": code}, headers=auth_header(joiner))
+
+        families = client.get("/api/v1/family", headers=auth_header(joiner)).json()
+        member = next(m for m in families[0]["members"] if m["user_id"] == "joiner-uuid")
+        assert member["name"] == "Joiner Bhai"
+        assert member["role"] == "member"

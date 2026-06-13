@@ -11,6 +11,7 @@ from app.schemas.family import (
     InviteRequest,
     InviteResponse,
     JoinRequest,
+    ShareCode,
 )
 from app.services import families as family_service
 
@@ -47,6 +48,26 @@ def invite_member(
     """Generate a join code for the invitee and send it by email."""
     family_service.invite_member(db, user, payload)
     return InviteResponse()
+
+
+@router.get("/{family_id}/share-code", response_model=ShareCode)
+def get_share_code(
+    family_id: str,
+    db: Database = Depends(get_db),
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> dict:
+    """Return the family's directly-shareable join code (admin only)."""
+    return {"code": family_service.get_or_create_share_code(db, user, family_id)}
+
+
+@router.post("/{family_id}/share-code", response_model=ShareCode)
+def rotate_share_code(
+    family_id: str,
+    db: Database = Depends(get_db),
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> dict:
+    """Revoke the current share code and issue a fresh one (admin only)."""
+    return {"code": family_service.rotate_share_code(db, user, family_id)}
 
 
 @router.post(

@@ -7,10 +7,12 @@ from pymongo.database import Database
 from app.core.security import AuthenticatedUser
 from app.schemas.family import FamilyCreate, InviteRequest, JoinRequest
 from app.services import email as email_service
+from app.services import users as users_service
 from app.services.vouchers import parse_family_id
 
 
 def create_family(db: Database, user: AuthenticatedUser, payload: FamilyCreate) -> dict:
+    users_service.upsert_user(db, user)
     document = {
         "name": payload.name,
         "created_by": user.id,
@@ -18,19 +20,57 @@ def create_family(db: Database, user: AuthenticatedUser, payload: FamilyCreate) 
             {"user_id": user.id, "role": "admin", "email": user.email, "name": user.name}
         ],
         "invites": [],
+        # A reusable, non-email-bound code the admin can share directly (chat,
+        # in person). Regenerable so a leaked code can be revoked.
+        "share_code": secrets.token_hex(4),
         "created_at": datetime.now(timezone.utc),
     }
     result = db.families.insert_one(document)
     return {"family_id": str(result.inserted_id), "name": payload.name}
 
 
+def get_or_create_share_code(db: Database, user: AuthenticatedUser, family_id: str) -> str:
+    """Return the family's shareable join code (admin only).
+
+    Lazily mints one for families created before this feature existed.
+    """
+    family = _resolve_admin_family(db, user, family_id)
+    code = family.get("share_code")
+    if not code:
+        code = secrets.token_hex(4)
+        db.families.update_one({"_id": family["_id"]}, {"$set": {"share_code": code}})
+    return code
+
+
+def rotate_share_code(db: Database, user: AuthenticatedUser, family_id: str) -> str:
+    """Revoke the current shareable code and issue a fresh one (admin only)."""
+    family = _resolve_admin_family(db, user, family_id)
+    code = secrets.token_hex(4)
+    db.families.update_one({"_id": family["_id"]}, {"$set": {"share_code": code}})
+    return code
+
+
 def get_user_families(db: Database, user: AuthenticatedUser) -> list[dict]:
-    families = []
-    for doc in db.families.find({"members.user_id": user.id}):
+    families = list(db.families.find({"members.user_id": user.id}))
+
+    # Enrich members with up-to-date profile data (name/email/avatar) from the
+    # `users` collection so display stays fresh even when a member updated their
+    # Google profile after joining. The name/email stored on the membership are
+    # kept as a fallback for users who have not signed in since the sync existed.
+    member_ids = {m["user_id"] for doc in families for m in doc["members"]}
+    profiles = users_service.get_users_by_ids(db, member_ids)
+
+    result = []
+    for doc in families:
         doc["_id"] = str(doc["_id"])
         doc.pop("invites", None)  # join codes are not exposed to members
-        families.append(doc)
-    return families
+        for member in doc["members"]:
+            profile = profiles.get(member["user_id"])
+            member["name"] = (profile or {}).get("name") or member.get("name")
+            member["email"] = (profile or {}).get("email") or member.get("email")
+            member["avatar_url"] = (profile or {}).get("avatar_url")
+        result.append(doc)
+    return result
 
 
 def _resolve_admin_family(db: Database, user: AuthenticatedUser, family_id: str | None) -> dict:
@@ -94,12 +134,40 @@ def invite_member(db: Database, user: AuthenticatedUser, payload: InviteRequest)
     email_service.send_invite_email(payload.email, family["name"], join_code)
 
 
+def _add_member(db: Database, family: dict, user: AuthenticatedUser) -> dict:
+    if any(m["user_id"] == user.id for m in family["members"]):
+        raise HTTPException(status.HTTP_409_CONFLICT, "You are already a member of this family")
+    users_service.upsert_user(db, user)
+    db.families.update_one(
+        {"_id": family["_id"]},
+        {
+            "$push": {
+                "members": {
+                    "user_id": user.id,
+                    "role": "member",
+                    "email": user.email,
+                    "name": user.name,
+                }
+            }
+        },
+    )
+    return {"family_id": str(family["_id"]), "name": family["name"]}
+
+
 def join_family(db: Database, user: AuthenticatedUser, payload: JoinRequest) -> dict:
-    family = db.families.find_one({"invites.code": payload.code})
+    code = payload.code.strip()
+
+    # A directly-shared family code lets anyone holding it join — no email binding.
+    shared = db.families.find_one({"share_code": code})
+    if shared is not None:
+        return _add_member(db, shared, user)
+
+    # Otherwise fall back to an emailed, single-use invite bound to the address.
+    family = db.families.find_one({"invites.code": code})
     if family is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Invalid join code")
 
-    invite = next(i for i in family["invites"] if i["code"] == payload.code)
+    invite = next(i for i in family["invites"] if i["code"] == code)
     if invite["status"] != "pending":
         raise HTTPException(status.HTTP_410_GONE, "This invite has already been used")
     if user.email is None or user.email.lower() != invite["email"]:
@@ -109,9 +177,9 @@ def join_family(db: Database, user: AuthenticatedUser, payload: JoinRequest) -> 
     if any(m["user_id"] == user.id for m in family["members"]):
         raise HTTPException(status.HTTP_409_CONFLICT, "You are already a member of this family")
 
+    users_service.upsert_user(db, user)
     updated_invites = [
-        {**i, "status": "accepted"} if i["code"] == payload.code else i
-        for i in family["invites"]
+        {**i, "status": "accepted"} if i["code"] == code else i for i in family["invites"]
     ]
     db.families.update_one(
         {"_id": family["_id"]},
