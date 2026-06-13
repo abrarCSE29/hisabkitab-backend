@@ -150,3 +150,37 @@ class TestOcrEndpoint:
         )
         assert response.status_code == 422
         assert "clearer photo" in response.json()["detail"]
+
+
+class TestOcrFeedback:
+    def test_requires_auth(self, client):
+        assert client.post("/api/v1/vouchers/ocr/feedback", json={"rating": "up"}).status_code == 401
+
+    def test_records_thumbs_up(self, client, mock_db):
+        response = client.post(
+            "/api/v1/vouchers/ocr/feedback",
+            json={"rating": "up", "image_url": IMAGE_URL, "item_count": 5},
+            headers=auth_header(),
+        )
+        assert response.status_code == 204
+        stored = mock_db.ocr_feedback.find_one()
+        assert stored["rating"] == "up"
+        assert stored["item_count"] == 5
+        assert stored["created_at"] is not None
+
+    def test_records_thumbs_down_without_image(self, client, mock_db):
+        response = client.post(
+            "/api/v1/vouchers/ocr/feedback",
+            json={"rating": "down"},
+            headers=auth_header(),
+        )
+        assert response.status_code == 204
+        assert mock_db.ocr_feedback.find_one()["rating"] == "down"
+
+    def test_rejects_invalid_rating(self, client):
+        response = client.post(
+            "/api/v1/vouchers/ocr/feedback",
+            json={"rating": "meh"},
+            headers=auth_header(),
+        )
+        assert response.status_code == 422

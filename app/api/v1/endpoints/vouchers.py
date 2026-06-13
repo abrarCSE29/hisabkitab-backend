@@ -4,7 +4,7 @@ from pymongo.database import Database
 from app.api.deps import get_db
 from app.core.ratelimit import SlidingWindowLimiter, user_rate_limit
 from app.core.security import AuthenticatedUser, get_current_user
-from app.schemas.ocr import OcrRequest, ReceiptExtraction
+from app.schemas.ocr import OcrFeedback, OcrRequest, ReceiptExtraction
 from app.schemas.voucher import VoucherCreate, VoucherCreated, VoucherOut, VoucherUpdate
 from app.services import ocr as ocr_service
 from app.services import vouchers as voucher_service
@@ -77,3 +77,13 @@ def parse_receipt(
 ) -> ReceiptExtraction:
     """Extract itemized rows from a receipt image via the OpenAI Vision API."""
     return ocr_service.extract_receipt_items(payload.image_url)
+
+
+@router.post("/ocr/feedback", status_code=status.HTTP_204_NO_CONTENT)
+def submit_ocr_feedback(
+    payload: OcrFeedback,
+    db: Database = Depends(get_db),
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> None:
+    """Record a thumbs up/down on the accuracy of an OCR auto-fill."""
+    ocr_service.record_feedback(db, user, payload)

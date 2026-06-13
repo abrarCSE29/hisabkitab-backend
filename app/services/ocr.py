@@ -8,13 +8,16 @@ limits, exhausted quota, and provider outages map to structured HTTP errors
 the frontend can show — never an unhandled 500.
 """
 
+from datetime import datetime, timezone
 from functools import lru_cache
 
 from fastapi import HTTPException, status
 from openai import APIError, APIStatusError, AuthenticationError, OpenAI, RateLimitError
+from pymongo.database import Database
 
 from app.core.config import get_settings
-from app.schemas.ocr import ReceiptExtraction
+from app.core.security import AuthenticatedUser
+from app.schemas.ocr import OcrFeedback, ReceiptExtraction
 
 SYSTEM_PROMPT = (
     "You extract line items from photos of shop receipts from Bangladesh. "
@@ -93,3 +96,16 @@ def extract_receipt_items(image_url: str) -> ReceiptExtraction:
     # Drop noise rows so results are directly usable as voucher items (amount > 0).
     parsed.items = [item for item in parsed.items if item.amount > 0 and item.name.strip()]
     return parsed
+
+
+def record_feedback(db: Database, user: AuthenticatedUser, feedback: OcrFeedback) -> None:
+    """Persist a user's thumbs up/down on an OCR auto-fill for quality tracking."""
+    db.ocr_feedback.insert_one(
+        {
+            "user_id": user.id,
+            "rating": feedback.rating,
+            "image_url": feedback.image_url,
+            "item_count": feedback.item_count,
+            "created_at": datetime.now(timezone.utc),
+        }
+    )
