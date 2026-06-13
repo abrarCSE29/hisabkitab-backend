@@ -133,3 +133,13 @@ def update_voucher(
     }
     db.vouchers.update_one({"_id": doc["_id"]}, {"$set": changes})
     return _serialize({**doc, **changes})
+
+
+def delete_voucher(db: Database, user: AuthenticatedUser, voucher_id: str) -> None:
+    doc = _fetch_visible_voucher(db, user, voucher_id)
+    if doc["user_id"] != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the creator of a voucher can delete it",
+        )
+    db.vouchers.delete_one({"_id": doc["_id"]})

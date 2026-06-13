@@ -56,6 +56,16 @@ def update_voucher(
     return voucher_service.update_voucher(db, user, voucher_id, payload)
 
 
+@router.delete("/{voucher_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_voucher(
+    voucher_id: str,
+    db: Database = Depends(get_db),
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> None:
+    """Delete a voucher (creator only)."""
+    voucher_service.delete_voucher(db, user, voucher_id)
+
+
 @router.post(
     "/ocr",
     response_model=ReceiptExtraction,

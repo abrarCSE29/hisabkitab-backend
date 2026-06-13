@@ -314,3 +314,50 @@ class TestUpdateVoucher:
         )
         assert response.status_code == 200
         assert mock_db.vouchers.find_one()["family_id"] is None
+
+
+class TestDeleteVoucher:
+    def delete(self, client, voucher_id, token=None):
+        return client.delete(f"/api/v1/vouchers/{voucher_id}", headers=auth_header(token))
+
+    def test_owner_can_delete_own_voucher(self, client, mock_db):
+        voucher_id = create_and_get_id(client)
+        response = self.delete(client, voucher_id)
+        assert response.status_code == 204
+        assert mock_db.vouchers.find_one() is None
+
+    def test_family_member_cannot_delete_others_voucher(self, client, mock_db):
+        family_id = str(
+            mock_db.families.insert_one(
+                {
+                    "name": "F",
+                    "created_by": TEST_USER_ID,
+                    "members": [
+                        {"user_id": TEST_USER_ID, "role": "admin", "email": None, "name": None},
+                        {"user_id": "member-uuid", "role": "member", "email": None, "name": None},
+                    ],
+                    "invites": [],
+                    "created_at": datetime.now(timezone.utc),
+                }
+            ).inserted_id
+        )
+        voucher_id = create_and_get_id(client, quick_expense(300, family_id=family_id))
+
+        member = make_token(sub="member-uuid", email="member@example.com")
+        response = self.delete(client, voucher_id, token=member)
+        assert response.status_code == 403  # visible to them, but not deletable
+        assert mock_db.vouchers.find_one() is not None  # still there
+
+    def test_stranger_gets_404(self, client, mock_db):
+        voucher_id = create_and_get_id(client)
+        stranger = make_token(sub="stranger-uuid", email="s@example.com")
+        response = self.delete(client, voucher_id, token=stranger)
+        assert response.status_code == 404
+        assert mock_db.vouchers.find_one() is not None  # untouched
+
+    def test_unknown_id_404_and_malformed_422(self, client):
+        assert self.delete(client, "65cb7f0000000000000000aa").status_code == 404
+        assert self.delete(client, "not-an-id").status_code == 422
+
+    def test_requires_auth(self, client):
+        assert client.delete("/api/v1/vouchers/65cb7f0000000000000000aa").status_code == 401
