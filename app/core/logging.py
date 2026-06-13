@@ -29,12 +29,19 @@ def setup_logging() -> None:
         root.addHandler(stream_handler)
 
         if settings.log_file:
-            file_handler = RotatingFileHandler(
-                settings.log_file,
-                maxBytes=MAX_LOG_BYTES,
-                backupCount=BACKUP_COUNT,
-                encoding="utf-8",
-            )
-            file_handler.setFormatter(formatter)
-            root.addHandler(file_handler)
+            try:
+                file_handler = RotatingFileHandler(
+                    settings.log_file,
+                    maxBytes=MAX_LOG_BYTES,
+                    backupCount=BACKUP_COUNT,
+                    encoding="utf-8",
+                )
+                file_handler.setFormatter(formatter)
+                root.addHandler(file_handler)
+            except OSError:
+                # Read-only filesystem (e.g. serverless/Vercel): stdout is enough.
+                # Captured by the platform's log drain; never crash on boot.
+                logging.getLogger(__name__).warning(
+                    "Could not open log file %r; logging to stdout only", settings.log_file
+                )
     root.setLevel(level)

@@ -16,7 +16,15 @@ _client: MongoClient | None = None
 
 
 def connect_to_mongo() -> None:
+    """Open the shared client and ensure indexes. Idempotent.
+
+    Called from the ASGI lifespan locally, but also lazily from get_database()
+    so the app still works on serverless platforms (e.g. Vercel) where the
+    lifespan startup event is not driven by the runtime.
+    """
     global _client
+    if _client is not None:
+        return
     settings = get_settings()
     _client = MongoClient(
         settings.mongodb_uri,
@@ -38,7 +46,8 @@ def close_mongo_connection() -> None:
 
 def get_database() -> Database:
     if _client is None:
-        raise RuntimeError("MongoDB client is not initialized. Call connect_to_mongo() first.")
+        # Serverless cold start: the lifespan never ran, so connect on demand.
+        connect_to_mongo()
     return _client[get_settings().mongodb_db_name]
 
 
